@@ -28,7 +28,10 @@ No resource sets a namespace, so everything is created in the current project.
 - The Cryostat Operator and a Cryostat instance whose target namespaces include the project. The pods carry the
   labels `cryostat.io/name: cryostat-sample` and `cryostat.io/namespace: cryostat`, so the operator injects the
   Cryostat Agent into them; change both labels in the deployments if your Cryostat instance has another name or
-  namespace.
+  namespace. The operator only injects the Agent when a pod is created, so add the project to the target
+  namespaces before you deploy (or sync with Argo CD). Pods created before that do not show up in Cryostat until
+  they are restarted:
+  `oc rollout restart deployment -l app.kubernetes.io/part-of=swag-shop-demo`.
 - The images are public on quay.io, so no pull secret is needed.
 
 ## Deploy
