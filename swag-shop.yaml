@@ -85,35 +85,39 @@ spec:
       port: 8080
       targetPort: http
 ---
-# Source: manifests/swag-shop-search-deployment.yaml
+# Source: manifests/swag-shop-frontend-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: swag-shop-search
+  name: swag-shop-frontend
   labels:
-    app.kubernetes.io/name: swag-shop-search
-    app.kubernetes.io/component: search
+    app.kubernetes.io/name: swag-shop-frontend
+    app.kubernetes.io/component: frontend
     app.kubernetes.io/part-of: swag-shop-demo
     # Shows the Quarkus icon in the OpenShift topology view
     app.openshift.io/runtime: quarkus
+  annotations:
+    # Draws the calls this service makes while it runs in the OpenShift topology view (the services fetch the
+    # products from the catalog only at start-up, so that is left out)
+    app.openshift.io/connects-to: '[{"apiVersion":"apps/v1","kind":"Deployment","name":"swag-shop-catalog"},{"apiVersion":"apps/v1","kind":"Deployment","name":"swag-shop-search"},{"apiVersion":"apps/v1","kind":"Deployment","name":"swag-shop-pricing"},{"apiVersion":"apps/v1","kind":"Deployment","name":"swag-shop-inventory"},{"apiVersion":"apps/v1","kind":"Deployment","name":"swag-shop-order"},{"apiVersion":"apps/v1","kind":"Deployment","name":"swag-shop-load-generator"}]'
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: swag-shop-search
+      app.kubernetes.io/name: swag-shop-frontend
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: swag-shop-search
-        app.kubernetes.io/component: search
+        app.kubernetes.io/name: swag-shop-frontend
+        app.kubernetes.io/component: frontend
         app.kubernetes.io/part-of: swag-shop-demo
         # The Cryostat Operator injects the Cryostat Agent into pods with these labels
         cryostat.io/name: cryostat-sample
         cryostat.io/namespace: cryostat
     spec:
       containers:
-        - name: search
-          image: quay.io/mostmark/swag-shop-search:latest
+        - name: frontend
+          image: quay.io/mostmark/swag-shop-frontend:latest
           # Always pull, so restarting the pod picks up a newly pushed :latest
           imagePullPolicy: Always
           ports:
@@ -129,112 +133,27 @@ spec:
             # The image defaults to ParallelGC; use G1 (the JVM default), as when the services run locally
             - name: GC_CONTAINER_OPTIONS
               value: '-XX:+UseG1GC'
-            # The products are fetched from the catalog at start-up
-            - name: CATALOG_URL
+            # The services the frontend passes the requests on to
+            - name: QUARKUS_REST_CLIENT_CATALOG_URL
               value: 'http://swag-shop-catalog:8080'
-          resources:
-            # The CPU request is kept small: it is what the scheduler reserves, not what the service may use
-            requests:
-              cpu: 100m
-              memory: 384Mi
-            limits:
-              # High search load needs about 3 cores. With a lower limit the pod is throttled and JFR's sampler
-              # gets too few samples for the "Method Profiling" rule to turn red
-              cpu: "4"
-              memory: 512Mi
-          readinessProbe:
-            httpGet:
-              path: /q/health/ready
-              port: http
-            initialDelaySeconds: 3
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /q/health/live
-              port: http
-            initialDelaySeconds: 10
-            periodSeconds: 20
-            # A busy demo must never be restarted by the liveness probe
-            timeoutSeconds: 5
-            failureThreshold: 6
----
-# Source: manifests/swag-shop-search-service.yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: swag-shop-search
-  labels:
-    app.kubernetes.io/name: swag-shop-search
-    app.kubernetes.io/part-of: swag-shop-demo
-spec:
-  selector:
-    app.kubernetes.io/name: swag-shop-search
-  ports:
-    - name: http
-      port: 8080
-      targetPort: http
----
-# Source: manifests/swag-shop-pricing-deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: swag-shop-pricing
-  labels:
-    app.kubernetes.io/name: swag-shop-pricing
-    app.kubernetes.io/component: pricing
-    app.kubernetes.io/part-of: swag-shop-demo
-    # Shows the Quarkus icon in the OpenShift topology view
-    app.openshift.io/runtime: quarkus
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: swag-shop-pricing
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: swag-shop-pricing
-        app.kubernetes.io/component: pricing
-        app.kubernetes.io/part-of: swag-shop-demo
-        # The Cryostat Operator injects the Cryostat Agent into pods with these labels
-        cryostat.io/name: cryostat-sample
-        cryostat.io/namespace: cryostat
-    spec:
-      containers:
-        - name: pricing
-          image: quay.io/mostmark/swag-shop-pricing:latest
-          # Always pull, so restarting the pod picks up a newly pushed :latest
-          imagePullPolicy: Always
-          ports:
-            - name: http
-              containerPort: 8080
-              protocol: TCP
-          env:
-            # A small heap makes the memory leak visible within a couple of minutes
-            - name: JAVA_OPTS_APPEND
-              value: >-
-                -Xms128m -Xmx384m
-                -Dquarkus.http.host=0.0.0.0
-                -Djava.util.logging.manager=org.jboss.logmanager.LogManager
-            # The image defaults to ParallelGC; use G1 (the JVM default), as when the services run locally
-            - name: GC_CONTAINER_OPTIONS
-              value: '-XX:+UseG1GC'
-            # The products are fetched from the catalog at start-up
-            - name: CATALOG_URL
-              value: 'http://swag-shop-catalog:8080'
-            # Smart trigger: when the heap stays more than 35 % full for 20 seconds (garbage alone never does that),
-            # the Agent starts a recording with the memory leak template by itself.
-            # (ProcessCpuLoad is not usable here: Cryostat Agent 0.7 reads it as 0.0 even when the CPU is busy.)
-            - name: CRYOSTAT_AGENT_SMART_TRIGGER_DEFINITIONS
-              value: '[HeapMemoryUsagePercent>0.35;TargetDuration>duration("20s")]~SwagShopMemoryLeak'
+            - name: QUARKUS_REST_CLIENT_SEARCH_URL
+              value: 'http://swag-shop-search:8080'
+            - name: QUARKUS_REST_CLIENT_PRICING_URL
+              value: 'http://swag-shop-pricing:8080'
+            - name: QUARKUS_REST_CLIENT_INVENTORY_URL
+              value: 'http://swag-shop-inventory:8080'
+            - name: QUARKUS_REST_CLIENT_ORDER_URL
+              value: 'http://swag-shop-order:8080'
+            - name: QUARKUS_REST_CLIENT_LOAD_GENERATOR_URL
+              value: 'http://swag-shop-load-generator:8080'
           resources:
             # The CPU request is kept small: it is what the scheduler reserves, not what the service may use
             requests:
               cpu: 50m
-              memory: 512Mi
+              memory: 256Mi
             limits:
               cpu: "2"
-              memory: 768Mi
+              memory: 512Mi
           readinessProbe:
             httpGet:
               path: /q/health/ready
@@ -251,17 +170,35 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 6
 ---
-# Source: manifests/swag-shop-pricing-service.yaml
+# Source: manifests/swag-shop-frontend-route.yaml
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: swag-shop-frontend
+  labels:
+    app.kubernetes.io/name: swag-shop-frontend
+    app.kubernetes.io/part-of: swag-shop-demo
+spec:
+  to:
+    kind: Service
+    name: swag-shop-frontend
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+---
+# Source: manifests/swag-shop-frontend-service.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: swag-shop-pricing
+  name: swag-shop-frontend
   labels:
-    app.kubernetes.io/name: swag-shop-pricing
+    app.kubernetes.io/name: swag-shop-frontend
     app.kubernetes.io/part-of: swag-shop-demo
 spec:
   selector:
-    app.kubernetes.io/name: swag-shop-pricing
+    app.kubernetes.io/name: swag-shop-frontend
   ports:
     - name: http
       port: 8080
@@ -349,6 +286,103 @@ metadata:
 spec:
   selector:
     app.kubernetes.io/name: swag-shop-inventory
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# Source: manifests/swag-shop-load-generator-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: swag-shop-load-generator
+  labels:
+    app.kubernetes.io/name: swag-shop-load-generator
+    app.kubernetes.io/component: load-generator
+    app.kubernetes.io/part-of: swag-shop-demo
+    # Shows the Quarkus icon in the OpenShift topology view
+    app.openshift.io/runtime: quarkus
+  annotations:
+    # Draws the calls this service makes while it runs in the OpenShift topology view (the services fetch the
+    # products from the catalog only at start-up, so that is left out)
+    app.openshift.io/connects-to: '[{"apiVersion":"apps/v1","kind":"Deployment","name":"swag-shop-frontend"}]'
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: swag-shop-load-generator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: swag-shop-load-generator
+        app.kubernetes.io/component: load-generator
+        app.kubernetes.io/part-of: swag-shop-demo
+        # The Cryostat Operator injects the Cryostat Agent into pods with these labels
+        cryostat.io/name: cryostat-sample
+        cryostat.io/namespace: cryostat
+    spec:
+      containers:
+        - name: load-generator
+          image: quay.io/mostmark/swag-shop-load-generator:latest
+          # Always pull, so restarting the pod picks up a newly pushed :latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: JAVA_OPTS_APPEND
+              value: >-
+                -Xmx256m
+                -Dquarkus.http.host=0.0.0.0
+                -Djava.util.logging.manager=org.jboss.logmanager.LogManager
+            # The image defaults to ParallelGC; use G1 (the JVM default), as when the services run locally
+            - name: GC_CONTAINER_OPTIONS
+              value: '-XX:+UseG1GC'
+            # The products are fetched from the catalog at start-up
+            - name: CATALOG_URL
+              value: 'http://swag-shop-catalog:8080'
+            # The shoppers use the shop like a browser does: through the frontend
+            - name: SHOP_URL
+              value: 'http://swag-shop-frontend:8080'
+            # Start the shoppers with the pod; the demo control page switches them on and off
+            - name: LOAD_TRAFFIC_ENABLED
+              value: 'true'
+          resources:
+            # The CPU request is kept small: it is what the scheduler reserves, not what the service may use
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            # A busy demo must never be restarted by the liveness probe
+            timeoutSeconds: 5
+            failureThreshold: 6
+---
+# Source: manifests/swag-shop-load-generator-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: swag-shop-load-generator
+  labels:
+    app.kubernetes.io/name: swag-shop-load-generator
+    app.kubernetes.io/part-of: swag-shop-demo
+spec:
+  selector:
+    app.kubernetes.io/name: swag-shop-load-generator
   ports:
     - name: http
       port: 8080
@@ -448,39 +482,35 @@ spec:
       port: 8080
       targetPort: http
 ---
-# Source: manifests/swag-shop-frontend-deployment.yaml
+# Source: manifests/swag-shop-pricing-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: swag-shop-frontend
+  name: swag-shop-pricing
   labels:
-    app.kubernetes.io/name: swag-shop-frontend
-    app.kubernetes.io/component: frontend
+    app.kubernetes.io/name: swag-shop-pricing
+    app.kubernetes.io/component: pricing
     app.kubernetes.io/part-of: swag-shop-demo
     # Shows the Quarkus icon in the OpenShift topology view
     app.openshift.io/runtime: quarkus
-  annotations:
-    # Draws the calls this service makes while it runs in the OpenShift topology view (the services fetch the
-    # products from the catalog only at start-up, so that is left out)
-    app.openshift.io/connects-to: '[{"apiVersion":"apps/v1","kind":"Deployment","name":"swag-shop-catalog"},{"apiVersion":"apps/v1","kind":"Deployment","name":"swag-shop-search"},{"apiVersion":"apps/v1","kind":"Deployment","name":"swag-shop-pricing"},{"apiVersion":"apps/v1","kind":"Deployment","name":"swag-shop-inventory"},{"apiVersion":"apps/v1","kind":"Deployment","name":"swag-shop-order"},{"apiVersion":"apps/v1","kind":"Deployment","name":"swag-shop-load-generator"}]'
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: swag-shop-frontend
+      app.kubernetes.io/name: swag-shop-pricing
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: swag-shop-frontend
-        app.kubernetes.io/component: frontend
+        app.kubernetes.io/name: swag-shop-pricing
+        app.kubernetes.io/component: pricing
         app.kubernetes.io/part-of: swag-shop-demo
         # The Cryostat Operator injects the Cryostat Agent into pods with these labels
         cryostat.io/name: cryostat-sample
         cryostat.io/namespace: cryostat
     spec:
       containers:
-        - name: frontend
-          image: quay.io/mostmark/swag-shop-frontend:latest
+        - name: pricing
+          image: quay.io/mostmark/swag-shop-pricing:latest
           # Always pull, so restarting the pod picks up a newly pushed :latest
           imagePullPolicy: Always
           ports:
@@ -488,35 +518,31 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
+            # A small heap makes the memory leak visible within a couple of minutes
             - name: JAVA_OPTS_APPEND
               value: >-
-                -Xmx256m
+                -Xms128m -Xmx384m
                 -Dquarkus.http.host=0.0.0.0
                 -Djava.util.logging.manager=org.jboss.logmanager.LogManager
             # The image defaults to ParallelGC; use G1 (the JVM default), as when the services run locally
             - name: GC_CONTAINER_OPTIONS
               value: '-XX:+UseG1GC'
-            # The services the frontend passes the requests on to
-            - name: QUARKUS_REST_CLIENT_CATALOG_URL
+            # The products are fetched from the catalog at start-up
+            - name: CATALOG_URL
               value: 'http://swag-shop-catalog:8080'
-            - name: QUARKUS_REST_CLIENT_SEARCH_URL
-              value: 'http://swag-shop-search:8080'
-            - name: QUARKUS_REST_CLIENT_PRICING_URL
-              value: 'http://swag-shop-pricing:8080'
-            - name: QUARKUS_REST_CLIENT_INVENTORY_URL
-              value: 'http://swag-shop-inventory:8080'
-            - name: QUARKUS_REST_CLIENT_ORDER_URL
-              value: 'http://swag-shop-order:8080'
-            - name: QUARKUS_REST_CLIENT_LOAD_GENERATOR_URL
-              value: 'http://swag-shop-load-generator:8080'
+            # Smart trigger: when the heap stays more than 35 % full for 20 seconds (garbage alone never does that),
+            # the Agent starts a recording with the memory leak template by itself.
+            # (ProcessCpuLoad is not usable here: Cryostat Agent 0.7 reads it as 0.0 even when the CPU is busy.)
+            - name: CRYOSTAT_AGENT_SMART_TRIGGER_DEFINITIONS
+              value: '[HeapMemoryUsagePercent>0.35;TargetDuration>duration("20s")]~SwagShopMemoryLeak'
           resources:
             # The CPU request is kept small: it is what the scheduler reserves, not what the service may use
             requests:
               cpu: 50m
-              memory: 256Mi
+              memory: 512Mi
             limits:
               cpu: "2"
-              memory: 512Mi
+              memory: 768Mi
           readinessProbe:
             httpGet:
               path: /q/health/ready
@@ -533,73 +559,51 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 6
 ---
-# Source: manifests/swag-shop-frontend-service.yaml
+# Source: manifests/swag-shop-pricing-service.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: swag-shop-frontend
+  name: swag-shop-pricing
   labels:
-    app.kubernetes.io/name: swag-shop-frontend
+    app.kubernetes.io/name: swag-shop-pricing
     app.kubernetes.io/part-of: swag-shop-demo
 spec:
   selector:
-    app.kubernetes.io/name: swag-shop-frontend
+    app.kubernetes.io/name: swag-shop-pricing
   ports:
     - name: http
       port: 8080
       targetPort: http
 ---
-# Source: manifests/swag-shop-frontend-route.yaml
-apiVersion: route.openshift.io/v1
-kind: Route
-metadata:
-  name: swag-shop-frontend
-  labels:
-    app.kubernetes.io/name: swag-shop-frontend
-    app.kubernetes.io/part-of: swag-shop-demo
-spec:
-  to:
-    kind: Service
-    name: swag-shop-frontend
-  port:
-    targetPort: http
-  tls:
-    termination: edge
-    insecureEdgeTerminationPolicy: Redirect
----
-# Source: manifests/swag-shop-load-generator-deployment.yaml
+# Source: manifests/swag-shop-search-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: swag-shop-load-generator
+  name: swag-shop-search
   labels:
-    app.kubernetes.io/name: swag-shop-load-generator
-    app.kubernetes.io/component: load-generator
+    app.kubernetes.io/name: swag-shop-search
+    app.kubernetes.io/component: search
     app.kubernetes.io/part-of: swag-shop-demo
     # Shows the Quarkus icon in the OpenShift topology view
     app.openshift.io/runtime: quarkus
-  annotations:
-    # Draws the calls this service makes while it runs in the OpenShift topology view (the services fetch the
-    # products from the catalog only at start-up, so that is left out)
-    app.openshift.io/connects-to: '[{"apiVersion":"apps/v1","kind":"Deployment","name":"swag-shop-frontend"}]'
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: swag-shop-load-generator
+      app.kubernetes.io/name: swag-shop-search
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: swag-shop-load-generator
-        app.kubernetes.io/component: load-generator
+        app.kubernetes.io/name: swag-shop-search
+        app.kubernetes.io/component: search
         app.kubernetes.io/part-of: swag-shop-demo
         # The Cryostat Operator injects the Cryostat Agent into pods with these labels
         cryostat.io/name: cryostat-sample
         cryostat.io/namespace: cryostat
     spec:
       containers:
-        - name: load-generator
-          image: quay.io/mostmark/swag-shop-load-generator:latest
+        - name: search
+          image: quay.io/mostmark/swag-shop-search:latest
           # Always pull, so restarting the pod picks up a newly pushed :latest
           imagePullPolicy: Always
           ports:
@@ -618,19 +622,15 @@ spec:
             # The products are fetched from the catalog at start-up
             - name: CATALOG_URL
               value: 'http://swag-shop-catalog:8080'
-            # The shoppers use the shop like a browser does: through the frontend
-            - name: SHOP_URL
-              value: 'http://swag-shop-frontend:8080'
-            # Start the shoppers with the pod; the demo control page switches them on and off
-            - name: LOAD_TRAFFIC_ENABLED
-              value: 'true'
           resources:
             # The CPU request is kept small: it is what the scheduler reserves, not what the service may use
             requests:
-              cpu: 50m
-              memory: 256Mi
+              cpu: 100m
+              memory: 384Mi
             limits:
-              cpu: "1"
+              # High search load needs about 3 cores. With a lower limit the pod is throttled and JFR's sampler
+              # gets too few samples for the "Method Profiling" rule to turn red
+              cpu: "4"
               memory: 512Mi
           readinessProbe:
             httpGet:
@@ -648,17 +648,17 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 6
 ---
-# Source: manifests/swag-shop-load-generator-service.yaml
+# Source: manifests/swag-shop-search-service.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: swag-shop-load-generator
+  name: swag-shop-search
   labels:
-    app.kubernetes.io/name: swag-shop-load-generator
+    app.kubernetes.io/name: swag-shop-search
     app.kubernetes.io/part-of: swag-shop-demo
 spec:
   selector:
-    app.kubernetes.io/name: swag-shop-load-generator
+    app.kubernetes.io/name: swag-shop-search
   ports:
     - name: http
       port: 8080

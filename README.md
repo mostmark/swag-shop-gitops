@@ -9,6 +9,7 @@ a conference swag web shop built as seven services and monitored by Cryostat, on
 |---|---|
 | `manifests/` | One file per resource |
 | `swag-shop.yaml` | All manifests from `manifests/` in a single file |
+| `update-combined.sh` | Regenerates `swag-shop.yaml` from `manifests/` |
 
 Resources:
 
@@ -55,5 +56,8 @@ echo "https://$(oc get route swag-shop-frontend -o jsonpath='{.spec.host}')/demo
 
 ## Updating
 
-The manifests come from the `openshift/` folder of the application repository. When a file in `manifests/`
-changes, regenerate `swag-shop.yaml` so the two stay in sync.
+When a file in `manifests/` changes, regenerate `swag-shop.yaml` so the two stay in sync:
+
+```shell
+./update-combined.sh
+```
