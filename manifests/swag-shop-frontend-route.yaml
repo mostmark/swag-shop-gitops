@@ -1,0 +1,16 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: swag-shop-frontend
+  labels:
+    app.kubernetes.io/name: swag-shop-frontend
+    app.kubernetes.io/part-of: swag-shop-demo
+spec:
+  to:
+    kind: Service
+    name: swag-shop-frontend
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

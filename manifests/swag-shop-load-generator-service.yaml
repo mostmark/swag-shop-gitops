@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: swag-shop-load-generator
+  labels:
+    app.kubernetes.io/name: swag-shop-load-generator
+    app.kubernetes.io/part-of: swag-shop-demo
+spec:
+  selector:
+    app.kubernetes.io/name: swag-shop-load-generator
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
